@@ -62,7 +62,7 @@ bot.action(/cancel_order_(.+)/, async (ctx) => {
         // إرسال أمر الإلغاء (Status 8) للموقع
         const res = await axios.get(`${BASE_URL}?api_key=${GRIZZLY_API_KEY}&action=setStatus&status=8&id=${orderId}`);
         if (res.data.includes('ACCESS_CANCEL')) {
-            await ctx.answerCbQuery('✅ تم إلغاء الرقم بنجاح واسترداد الرصيد.', { show_alert: true });
+            await ctx.answerCbQuery('✅ تم إلغاء الرقم بنجاح واسترداد الرصيد.', { show_alert:  });
             await ctx.editMessageText(`❌ **تم إلغاء الطلب:**\nالآيدي: ${orderId}\nتم استرداد الرصيد لمحفظتك.`);
         } else {
             await ctx.answerCbQuery('❌ لا يمكن الإلغاء حالياً.');
