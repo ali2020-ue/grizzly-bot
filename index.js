@@ -7,101 +7,74 @@ const BASE_URL = 'https://api.grizzlysms.com/stubs/handler_api.php';
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// --- 1. تصميم لوحة الأزرار السفلية (الدول) ---
+// مصفوفة الدول لضمان دقة الاختيار
+const countryData = [
+    { name: 'الكويت 🇰🇼', id: '52' },
+    { name: 'السعودية 🇸🇦', id: '38' },
+    { name: 'اليمن 🇾🇪', id: '92' },
+    { name: 'مصر 🇪🇬', id: '7' }
+];
+
 const mainKeyboard = Markup.keyboard([
     ['الكويت 🇰🇼', 'السعودية 🇸🇦'],
-    ['اليمن 🇾🇪', 'مصر 🇪🇬'],
-    ['قريباً.. ⏳']
+    ['اليمن 🇾🇪', 'مصر 🇪🇬']
 ]).resize();
 
-// --- 2. خريطة الدول (الاسم : كود جريزلي) ---
-const countryMap = {
-    'الكويت 🇰🇼': '52',
-    'السعودية 🇸🇦': '38',
-    'اليمن 🇾🇪': '92',
-    'مصر 🇪🇬': '7'
-};
-
-// --- 3. التعامل مع أمر /start ---
 bot.start((ctx) => {
-    ctx.reply(`مرحباً Bilal! 👋\nأهلاً بك في بوت صيد الأرقام الخاص بك.\nاختر دولة من القائمة في الأسفل لبدء الصيد:`, mainKeyboard);
+    ctx.reply(`مرحباً Bilal! 👋\nاختر الدولة المطلوبة من القائمة أدناه:`, mainKeyboard);
 });
 
-// --- 4. التعامل مع الضغط على أزرار الدول ---
-bot.hears(Object.keys(countryMap), async (ctx) => {
-    const countryName = ctx.message.text;
-    const countryId = countryMap[countryName];
+// معالجة اختيار الدولة بدقة
+bot.on('text', async (ctx) => {
+    const selectedCountry = countryData.find(c => c.name === ctx.message.text);
     
-    await ctx.reply(`🔄 جاري صيد رقم من ${countryName}.. انتظر قليلاً.`);
+    if (!selectedCountry) return; // تجاهل النصوص الأخرى
+
+    await ctx.reply(`🔄 جاري طلب رقم من ${selectedCountry.name}...`);
 
     try {
-        const res = await axios.get(`${BASE_URL}?api_key=${GRIZZLY_API_KEY}&action=getNumber&service=wa&country=${countryId}`);
+        // التأكد من إرسال الـ ID الصحيح للدولة في الرابط
+        const res = await axios.get(`${BASE_URL}?api_key=${GRIZZLY_API_KEY}&action=getNumber&service=wa&country=${selectedCountry.id}`);
         
         if (res.data.includes('ACCESS_NUMBER')) {
             const [_, orderId, number] = res.data.split(':');
-            const cleanNumber = number.replace('+', ''); // التأكد من أن الرقم بدون + للروابط
             
-            // --- تصميم الرسالة الاحترافية للأرقام ---
-            let messageText = `🎯 تم صيد رقم بنجاح!\n`;
-            messageText += `━━━━━━━━━━━━━━━\n`;
-            messageText += `🌍 الدولة: ${countryName}\n`;
-            messageText += `📞 الرقم: \`+${cleanNumber}\` (اضغط للنسخ)\n`;
-            messageText += `🆔 الآيدي: ${orderId}\n`;
-            messageText += `━━━━━━━━━━━━━━━\n`;
-            messageText += `الآن انتظر وصول الكود.. سيصلك آلياً هنا.`;
+            let msg = `🎯 تم صيد رقم من ${selectedCountry.name}!\n`;
+            msg += `━━━━━━━━━━━━━━━\n`;
+            msg += `📞 الرقم: \`+${number}\`\n`;
+            msg += `🆔 الآيدي: ${orderId}\n`;
+            msg += `━━━━━━━━━━━━━━━`;
 
-            await ctx.replyWithMarkdownV2(escapeMarkdown(messageText), 
+            await ctx.replyWithMarkdownV2(escapeMarkdown(msg), 
             Markup.inlineKeyboard([
-                // الصف الأول: روابط تحقق خارجية
-                [
-                    Markup.button.url('🧐 تحقق واتس', `https://wa.me/${cleanNumber}`),
-                    Markup.button.url('🧐 تحقق تليجرام', `https://t.me/+${cleanNumber}`)
-                ],
-                // الصف الثاني: أزرار التحكم
-                [
-                    Markup.button.callback('✅ طلب الكود', `status_${orderId}`),
-                    Markup.button.callback('❌ إلغاء الرقم', `cancel_${orderId}`)
-                ]
+                [Markup.button.url('🧐 تحقق واتس', `https://wa.me/${number}`)],
+                [Markup.button.callback('✅ طلب الكود', `status_${orderId}`), Markup.button.callback('❌ إلغاء', `cancel_${orderId}`)]
             ]));
-
         } else {
-            ctx.reply('❌ عذراً، لا توجد أرقام متوفرة لهذه الدولة حالياً.');
+            ctx.reply('❌ لا توجد أرقام متوفرة حالياً لهذه الدولة.');
         }
     } catch (e) {
-        ctx.reply('حدث خطأ في الاتصال، تأكد من مفتاح الـ API.');
+        ctx.reply('❌ حدث خطأ في الاتصال بمزود الخدمة.');
     }
 });
 
-// --- 5. التعامل مع زر طلب الكود (اليدوي) ---
 bot.action(/status_(.+)/, async (ctx) => {
     const orderId = ctx.match[1];
-    try {
-        const res = await axios.get(`${BASE_URL}?api_key=${GRIZZLY_API_KEY}&action=getStatus&id=${orderId}`);
-        if (res.data.includes('STATUS_OK')) {
-            const code = res.data.split(':')[1];
-            await ctx.editMessageText(`✅ كود الواتساب هو: \`${code}\``, { parse_mode: 'MarkdownV2' });
-        } else {
-            await ctx.answerCbQuery('لم يصل الكود بعد، انتظر دقيقة وأعد المحاولة.');
-        }
-    } catch (e) {
-        await ctx.answerCbQuery('خطأ في الاتصال.');
+    const res = await axios.get(`${BASE_URL}?api_key=${GRIZZLY_API_KEY}&action=getStatus&id=${orderId}`);
+    if (res.data.includes('STATUS_OK')) {
+        const code = res.data.split(':')[1];
+        await ctx.reply(`✅ كود الواتساب هو: \`${code}\``, { parse_mode: 'MarkdownV2' });
+    } else {
+        await ctx.answerCbQuery('الكود لم يصل بعد..');
     }
 });
 
-// --- 6. التعامل مع زر الإلغاء ---
 bot.action(/cancel_(.+)/, async (ctx) => {
     const orderId = ctx.match[1];
-    try {
-        // إرسال كود إلغاء (8) للموقع
-        await axios.get(`${BASE_URL}?api_key=${GRIZZLY_API_KEY}&action=setStatus&status=8&id=${orderId}`);
-        await ctx.answerCbQuery('تم الإلغاء بنجاح ✅');
-        await ctx.editMessageText(`❌ تم إلغاء هذا الرقم واسترداد الرصيد للموقع.`);
-    } catch (e) {
-        await ctx.answerCbQuery('فشل الإلغاء، قد يكون الكود وصل.');
-    }
+    await axios.get(`${BASE_URL}?api_key=${GRIZZLY_API_KEY}&action=setStatus&status=8&id=${orderId}`);
+    await ctx.editMessageText('❌ تم إلغاء الرقم بنجاح.');
 });
 
-// دالة مساعدة لتنظيف النصوص من رموز الماركداون
 function escapeMarkdown(text) {
     return text.replace(/[_*[\]()~`>#+-=|{}.!]/g, '\\$&');
 }
